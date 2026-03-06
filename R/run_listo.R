@@ -1,0 +1,99 @@
+#' Assess the overlap of two or three lists of objects.
+#'
+#' This function assesses the overlap of two or three lists of objects
+#' (character vectors, or data frames having at least one numeric column).
+#'
+#' @inheritParams pvalObjects
+#' @param list1 A list containing character vectors, or data frames having
+#' a numeric column.
+#' @param list2 A list containing character vectors, or data frames having a
+#' numeric column.
+#' @param list3 A list containing character vectors, or data frames having a
+#' numeric column.
+#' @param universe1 Character vector; the set from which the items
+#' corresponding to the elements in \code{list1} are selected.
+#' @param universe2 Character vector; the set from which the items
+#' corresponding to the elements in \code{list2} are selected.
+#' @param filterResults Logical; whether to filter the results based on the
+#' adjusted p-values.
+#' @param verbose Logical; whether the output should be verbose.
+#' @param ... Additional arguments passed to \code{mtCorrectDF}.
+#'
+#' @return A data frame listing the p-value and adjusted p-value for each
+#' overlap. Combinations of overlaps are represented through the first two
+#' (or three if \code{list3} is not \code{NULL}) columns, while the penultimate
+#' column records the overlap p-values and the last column records the adjusted
+#' overlap p-values.
+#'
+#' @examples
+#' donorPath <- system.file('extdata', 'donorMarkers.qs2', package='LISTO')
+#' donorMarkers <- qs2::qs_read(donorPath)[seq(3)]
+#' labelPath <- system.file('extdata', 'labelMarkers.qs2', package='LISTO')
+#' labelMarkers <- qs2::qs_read(labelPath)[seq(3)]
+#' universe1Path <- system.file('extdata', 'universe1.qs2', package='LISTO')
+#' universe1 <- qs2::qs_read(universe1Path)
+#' res <-  runLISTO(donorMarkers, labelMarkers, universe1=universe1,
+#' numCol='avg_log2FC')
+#'
+#' @export
+#'
+runLISTO <- function(list1,
+                     list2,
+                     list3 = NULL,
+                     universe1,
+                     universe2 = NULL,
+                     numCol = NULL,
+                     isHighTop = TRUE,
+                     maxCutoffs = 5000,
+                     mtMethod = c('BY', 'holm', 'hochberg',
+                                  'hommel', 'bonferroni', 'BH',
+                                  'fdr', 'none'),
+                     filterResults = FALSE,
+                     nCores = 1,
+                     verbose = TRUE,
+                     ...){
+    mtMethod <- match.arg(mtMethod, c('BY', 'holm', 'hochberg',
+                                      'hommel', 'bonferroni', 'BH',
+                                      'fdr', 'none'))
+
+    if (is.null(list3)){
+        df <- expand.grid(names(list1), names(list2))
+        if (is.null(universe2))
+            type <- '2N' else
+                type <- '2MN'
+    } else {
+        df <- expand.grid(names(list1), names(list2), names(list3))
+        type <- '3N'
+        if (!is.null(universe2))
+            message('Three-way overlaps can be currently computed only for',
+                    ' one universe. `universe2` will be ignored.')
+    }
+    colnames(df) <- paste0('Group', seq(ncol(df)))
+
+    df$pval <- vapply(seq(nrow(df)),
+                      function(i){
+                          names1 <- df[i, 1]
+                          names2 <- df[i, 2]
+                          obj1 <- list1[[names1]]
+                          obj2 <- list2[[names2]]
+                          if(is.null(list3)){
+                              obj3 <- NULL
+                              if (verbose)
+                                  message('Assessing overlap between sets ',
+                                          names1, ' and ', names2, '...')
+                          } else {
+                              names3 <- df[i, 3]
+                              obj3 <- list3[[names3]]
+                              if (verbose)
+                                  message('Assessing overlap between sets ',
+                                          names1, ', ', names2, ' and ',
+                                          names3, '...')
+                          }
+                          return(pvalObjects(obj1, obj2, obj3,
+                                             universe1, universe2, numCol,
+                                             isHighTop, maxCutoffs, mtMethod,
+                                             nCores, type))
+                      }, numeric(1))
+    df <- mtCorrectDF(df, mtMethod, doFilter=filterResults, ...)
+    return(df)
+}
